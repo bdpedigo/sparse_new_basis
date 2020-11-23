@@ -1,29 +1,14 @@
 #%%
-
-# setting temporary PATH variables
-import os
-
-# path to your R installation
-os.environ["R_HOME"] = "/Library/Frameworks/R.framework/Resources/"
-# path depends on where you installed Python. Mine is the Anaconda distribution
-os.environ[
-    "R_USER"
-] = "/Users/bpedigo/miniconda3/envs/sparse/lib/python3.7/site-packages/rpy2"
-
-
 import matplotlib as mpl
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
-import rpy2.robjects as robjects
-import rpy2.robjects.numpy2ri
 import seaborn as sns
-from rpy2.robjects.packages import importr
 from scipy.stats import ortho_group
 
 from sparse_matrix_analysis import sparse_component_analysis
 from sparse_matrix_analysis.utils import l1_norm, soft_threshold
-
+from sparse_new_basis.R import sca_R_epca, setup_R, sma_R_epca
 
 # plotting settings
 rc_dict = {
@@ -48,10 +33,36 @@ def set_theme():
 
 set_theme()
 
-rpy2.robjects.numpy2ri.activate()
+epca = setup_R()
 
-# load the module we need
-epca = importr("epca")
+
+def sca_R(*args, **kwargs):
+    return sca_R_epca(epca, *args, **kwargs)
+
+
+from pathlib import Path
+
+fig_dir = Path("sparse_new_basis/results/compare_to_R")
+
+
+def stashfig(
+    name,
+    *args,
+    transparent=False,
+    facecolor="w",
+    dpi=300,
+    pad_inches=0.25,
+    bbox_inches="tight",
+    **kwargs
+):
+    plt.savefig(
+        fig_dir / name,
+        transparent=transparent,
+        facecolor=facecolor,
+        dpi=dpi,
+        pad_inches=pad_inches,
+        bbox_inches=bbox_inches,
+    )
 
 
 #%%
@@ -72,27 +83,28 @@ def sample_data(n=100, d=16):
     Y, _ = np.linalg.qr(rand_normal)
     Y = soft_threshold(Y, 20)
 
-    X = S @ Y.T + np.random.normal(0, 0.03, size=(n, n))  # TODO variance right?
+    X = S @ Y.T + np.random.normal(0, 0.01, size=(n, n))  # TODO variance right?
     return X
 
 
 def proportion_variance_explained(X, Y):
     X = X.copy()
-    # X -= X.mean(axis=0)[None, :]
+    X -= X.mean(axis=0)[None, :]
     return (np.linalg.norm(X @ Y @ np.linalg.inv(Y.T @ Y) @ Y.T, ord="fro") ** 2) / (
         np.linalg.norm(X, ord="fro") ** 2
     )
 
 
-def r_sca(X, n_components=2, gamma=None, center=True, scale=True):
-    out = epca.sca(X, k=n_components, gamma=gamma, center=center, scale=scale)
-    loadings = np.asarray(out[0])
-    scores = np.asarray(out[1])
-    return scores, loadings
+# def r_sca(X, n_components=2, gamma=None, center=True, scale=True):
+#     out = epca.sca(X, k=n_components, gamma=gamma, center=center, scale=scale)
+#     loadings = np.asarray(out[0])
+#     scores = np.asarray(out[1])
+#     return scores, loadings
 
 
 center = True
 scale = False
+max_iter = 10
 k_range = np.arange(2, d + 1, 2)
 n_replicates = 5
 rows = []
@@ -102,14 +114,26 @@ for i in range(n_replicates):
     for k in k_range:
         gamma = k * 2.5
         Z_hat_sca, Y_hat_sca = sparse_component_analysis(
-            X, n_components=k, gamma=gamma, max_iter=100, scale=scale, center=center
+            X,
+            n_components=k,
+            gamma=gamma,
+            max_iter=max_iter,
+            scale=scale,
+            center=center,
         )
         pve = proportion_variance_explained(X, Y_hat_sca)
         rows.append({"replicate": i, "k": k, "pve": pve, "method": "SCA"})
 
-        Z_hat_r, Y_hat_r = r_sca(
-            X, n_components=k, gamma=gamma, center=center, scale=scale
+        Z_hat_r, Y_hat_r, outs = sca_R(
+            X,
+            k=k,
+            gamma=gamma,
+            center=center,
+            scale=scale,
+            max_iter=max_iter,
+            return_all=True,
         )
+        pve_r = np.asarray(outs[2])[-1]
         pve = proportion_variance_explained(X, Y_hat_r)
         rows.append({"replicate": i, "k": k, "pve": pve, "method": "r-SCA"})
 
@@ -121,8 +145,6 @@ for i in range(n_replicates):
 results = pd.DataFrame(rows)
 
 # %%
-
-
 fig, ax = plt.subplots(1, 1, figsize=(8, 8))
 colors = sns.color_palette("deep", 10)
 
@@ -175,4 +197,17 @@ ax.set(
     xlabel="# of PCs",
     ylim=(0.05, 0.95),
 )
-plt.savefig("PVE-by-rank-r-vs-mine", transparent=False, facecolor="w")
+stashfig("PVE-by-rank-r-vs-mine")
+
+#%%
+
+sca_results = results[results["method"] == "SCA"]
+r_sca_results = results[results["method"] == "r-SCA"]
+diff_results = sca_results.copy()
+diff_results["diff"] = sca_results["pve"].values - r_sca_results["pve"].values
+diff_results["k"] += np.random.uniform(-0.5, 0.5, size=len(diff_results))
+fig, ax = plt.subplots(1, 1, figsize=(8, 4))
+sns.scatterplot(x="k", y="diff", data=diff_results, ax=ax, s=30)
+ax.axhline(0, linestyle="--", color="black", zorder=-1)
+ax.set(ylabel="(Python - R) PVE", xlabel="# of PCs")
+stashfig("PVE-diff-by-rank", transparent=False, facecolor="w")

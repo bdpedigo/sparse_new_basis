@@ -18,17 +18,17 @@ def setup_R():
     return epca
 
 
-def sca_R(epca, *args, return_all=False, **kwargs):
+def sca_R_epca(epca, *args, return_all=False, **kwargs):
     out = epca.sca(*args, **kwargs)
     Y = np.asarray(out[0])
     Z = np.asarray(out[1])
     if return_all:
-        return Z, Y, out[2:]
+        return Z, Y, out
     else:
         return Z, Y
 
 
-def sma_R(epca, *args, return_all=False, **kwargs):
+def sma_R_epca(epca, *args, return_all=False, **kwargs):
     out = epca.sma(*args, **kwargs)
     Z = np.asarray(out[0])
     B = np.asarray(out[1])
