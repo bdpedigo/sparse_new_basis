@@ -31,8 +31,8 @@ from graspologic.plot import pairplot
 from graspologic.simulations import sbm
 from graspologic.utils import remap_labels
 
-from sparse_matrix_analysis import sparse_component_analysis
-from sparse_matrix_analysis.utils import soft_threshold
+from sparse_decomposition import sparse_component_analysis
+from sparse_decomposition.utils import soft_threshold
 
 
 # plotting settings

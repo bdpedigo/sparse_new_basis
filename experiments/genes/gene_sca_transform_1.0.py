@@ -48,12 +48,6 @@ global_params = (
 output_dir = output_dir / global_params
 
 
-if not os.path.isdir(output_dir):
-    print(f"{output_dir} is not a directory... creating.")
-    os.mkdir(output_dir)
-    os.mkdir(output_dir / "data")
-    os.mkdir(output_dir / "models")
-
 #%%
 sequencing_df, annotation_df = load_scRNAseq(fillna=True)
 
@@ -79,43 +73,93 @@ y = sequencing_df.index.get_level_values(level="Neuron_type").values
 
 # stratify=y will try to set the distribution of class labels the same for train/test
 X_train, X_test, index_train, index_test = train_test_split(
-    X, neuron_index, stratify=y, train_size=train_size
+    X, neuron_index, stratify=y, train_size=train_size, shuffle=True
 )
 
-with open(output_dir / Path("data") / "sequencing_df.pkl", "wb") as f:
-    pickle.dump(sequencing_df, f)
-
-with open(output_dir / Path("data") / "index_train.pkl", "wb") as f:
-    pickle.dump(index_train, f)
-
-with open(output_dir / Path("data") / "index_test.pkl", "wb") as f:
-    pickle.dump(index_test, f)
-
-
-#%% center and scale training data
 currtime = time.time()
 scaler = StandardScaler(with_mean=with_mean, with_std=with_std, copy=False)
 X_train = scaler.fit_transform(X_train)
 print(f"{time.time() - currtime:.3f} elapsed to scale and center data.")
 
-with open(output_dir / Path("models") / "scaler.pkl", "wb") as f:
-    pickle.dump(scaler, f)
+X_test = scaler.transform(X_test)
 
 #%%
 np.random.seed(seed)
 currtime = time.time()
 pca = PCA(n_components=n_components)
-X_pca = pca.fit_transform(X_train)
+X_train_pca = pca.fit_transform(X_train)
 print(f"{time.time() - currtime:.3f} elapsed to fit PCA model.")
+X_test_pca = pca.transform(X_test)
+#%%
+np.random.seed(seed + 2)
+currtime = time.time()
+sca = SparseComponentAnalysis(
+    n_components=n_components, max_iter=30, gamma=50, verbose=10
+)
+X_train_sca = sca.fit_transform(X_train)
+print(f"{time.time() - currtime:.3f} elapsed for SCA.")
+X_test_sca = sca.transform(X_test)
 
 #%%
+neuron_types = sequencing_df.index.get_level_values("Neuron_type").values
+neuron_type_palette = dict(zip(np.unique(neuron_types), cc.glasbey_light))
+
+y_train = index_train.get_level_values(level="Neuron_type").values
+y_test = index_test.get_level_values(level="Neuron_type").values
+
+pg = pairplot(
+    X_train_sca[:, :4], labels=y_train, palette=neuron_type_palette, diag_kind=None
+)
+pg._legend.remove()
+
+pg = pairplot(
+    X_test_sca[:, :4], labels=y_test, palette=neuron_type_palette, diag_kind=None
+)
+pg._legend.remove()
+
+#%%
+pg = pairplot(
+    X_train_pca[:, :4], labels=y_train, palette=neuron_type_palette, diag_kind=None
+)
+pg._legend.remove()
+
+pg = pairplot(
+    X_test_pca[:, :4], labels=y_test, palette=neuron_type_palette, diag_kind=None
+)
+pg._legend.remove()
+
+#%%
+
+index_train.get_level_values(level='Experiment').unique()
+
+#%%
+
+from sparse_new_basis.R import setup_R, sca_R_epca
+
+epca = setup_R()
+
+
+def sca_R(*args, **kwargs):
+    return sca_R_epca(epca, *args, **kwargs)
+
+
+currtime = time.time()
+outs = sca_R(
+    X_train[:8064],
+    k=n_components,
+    gamma=50,
+    max_iter=30,
+    center=False,
+    scale=False,
+    quiet=False,
+)
+print(f"{time.time() - currtime:.3f} elapsed for SCA in R.")
+
+#%%#%%
 np.random.seed(seed)
 gammas = [
     n_components,
     100,
-    250,
-    500,
-    int(np.sqrt(X_train.shape[1]) * n_components),
     np.inf,
 ]
 gammas = [float(g) for g in gammas]

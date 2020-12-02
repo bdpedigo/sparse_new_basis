@@ -13,6 +13,7 @@ from sklearn.decomposition import PCA
 from sklearn.feature_selection import VarianceThreshold
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import StandardScaler
+from umap import UMAP
 
 from graspologic.plot import pairplot
 from sparse_decomposition import SparseComponentAnalysis
@@ -23,7 +24,7 @@ from sparse_new_basis.plot import savefig, set_theme
 set_theme()
 
 
-fig_dir = Path("sparse_new_basis/results/gene_sca_examine_components_1.0")
+fig_dir = Path("sparse_new_basis/results/gene_sca_umap_1.0")
 
 
 def stashfig(name, *args, **kwargs):
@@ -33,9 +34,9 @@ def stashfig(name, *args, **kwargs):
 #%%
 output_dir = Path("sparse_new_basis/experiments/genes/outputs")
 
-var_thresh = 0.01
+var_thresh = 0.005
 train_size = 2 ** 14
-n_components = 20
+n_components = 125
 max_iter = 20
 with_mean = True
 with_std = True
@@ -47,12 +48,6 @@ global_params = (
 )
 output_dir = output_dir / global_params
 
-
-if not os.path.isdir(output_dir):
-    print(f"{output_dir} is not a directory... creating.")
-    os.mkdir(output_dir)
-    os.mkdir(output_dir / "data")
-    os.mkdir(output_dir / "models")
 
 #%%
 sequencing_df, annotation_df = load_scRNAseq(fillna=True)
@@ -82,24 +77,11 @@ X_train, X_test, index_train, index_test = train_test_split(
     X, neuron_index, stratify=y, train_size=train_size
 )
 
-with open(output_dir / Path("data") / "sequencing_df.pkl", "wb") as f:
-    pickle.dump(sequencing_df, f)
-
-with open(output_dir / Path("data") / "index_train.pkl", "wb") as f:
-    pickle.dump(index_train, f)
-
-with open(output_dir / Path("data") / "index_test.pkl", "wb") as f:
-    pickle.dump(index_test, f)
-
-
 #%% center and scale training data
 currtime = time.time()
 scaler = StandardScaler(with_mean=with_mean, with_std=with_std, copy=False)
 X_train = scaler.fit_transform(X_train)
 print(f"{time.time() - currtime:.3f} elapsed to scale and center data.")
-
-with open(output_dir / Path("models") / "scaler.pkl", "wb") as f:
-    pickle.dump(scaler, f)
 
 #%%
 np.random.seed(seed)
@@ -111,11 +93,11 @@ print(f"{time.time() - currtime:.3f} elapsed to fit PCA model.")
 #%%
 np.random.seed(seed)
 gammas = [
-    n_components,
-    100,
-    250,
-    500,
-    int(np.sqrt(X_train.shape[1]) * n_components),
+    2 * n_components,
+    # 100,
+    # 250,
+    # 500,
+    # int(np.sqrt(X_train.shape[1]) * n_components),
     np.inf,
 ]
 gammas = [float(g) for g in gammas]
@@ -139,20 +121,9 @@ for i, gamma in enumerate(gammas):
     plt.plot(sca._Z_diff_norms_)
     plt.plot(sca._Y_diff_norms_)
 
-    model_name = f"sca_gamma={gamma}"
-    with open(output_dir / Path("models") / f"{model_name}.pkl", "wb") as f:
-        pickle.dump(sca, f)
-
     print()
 
 #%%
-
-gamma = 20.0
-with open(output_dir / Path("models") / f"sca_gamma={gamma}.pkl", "rb") as f:
-    sca = pickle.load(f)
-
-#%%
-
 rows = []
 for gamma, model in models_by_gamma.items():
     explained_variance_ratio = model.explained_variance_ratio_
@@ -217,11 +188,70 @@ ax.yaxis.set_major_locator(plt.MaxNLocator(3))
 # ax.xaxis.set_major_locator(plt.IndexLocator(base=5, offset=-1))
 stashfig("screeplot-by-params")
 
+#%%
+
+currtime = time.time()
+umap_pca = UMAP(min_dist=0.3, n_neighbors=75, metric="cosine")
+X_umap_pca = umap_pca.fit_transform(Xs_by_gamma[np.inf])
+print(f"{time.time() - currtime:.3f} elapsed for UMAP.")
+
+currtime = time.time()
+umap_sca = UMAP(min_dist=0.3, n_neighbors=75, metric="cosine")
+X_umap_sca = umap_sca.fit_transform(Xs_by_gamma[gammas[0]])
+print(f"{time.time() - currtime:.3f} elapsed for UMAP.")
+
 
 #%%
 neuron_types = index_train.get_level_values("Neuron_type").values
 neuron_type_palette = dict(zip(np.unique(neuron_types), cc.glasbey_light))
 
+
+sca = models_by_gamma[gammas[-1]]
+components = sca.components_
+prop_genes_used = np.count_nonzero(components.max(axis=0)) / components.shape[1]
+fig, axs = plt.subplots(1, 2, figsize=(16, 8))
+ax = axs[0]
+ax.axis("off")
+sns.scatterplot(
+    x=X_umap_pca[:, 0],
+    y=X_umap_pca[:, 1],
+    hue=neuron_types,
+    palette=neuron_type_palette,
+    alpha=0.2,
+    s=10,
+    linewidth=0,
+    ax=ax,
+)
+ax.get_legend().remove()
+ax.set(
+    title=r"UMAP $\circ$ PCA - " + f"Proportion of genes used: {prop_genes_used:.2f}"
+)
+
+# fig, ax = plt.subplots(1, 1, figsize=(10, 10))
+sca = models_by_gamma[gammas[0]]
+components = sca.components_
+prop_genes_used = np.count_nonzero(components.max(axis=0)) / components.shape[1]
+
+ax = axs[1]
+ax.axis("off")
+sns.scatterplot(
+    x=X_umap_sca[:, 0],
+    y=X_umap_sca[:, 1],
+    hue=neuron_types,
+    palette=neuron_type_palette,
+    alpha=0.2,
+    s=10,
+    ax=ax,
+    linewidth=0,
+)
+ax.get_legend().remove()
+ax.set(
+    title=r"UMAP $\circ$ SCA - " + f"Proportion of genes used: {prop_genes_used:.2f}"
+)
+
+stashfig(f"umap-n_components={n_components}")
+
+#%%
 n_show = 5
 
 
@@ -492,5 +522,3 @@ for i in range(5):  # range(n_components):
     stashfig(f"component_{i+1}_relationplot-gamma={gamma}", format="png")
 
 #%%
-
-from umap import UMAP

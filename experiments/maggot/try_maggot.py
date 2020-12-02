@@ -10,7 +10,7 @@ import seaborn as sns
 
 from graspologic.plot import pairplot
 from graspologic.utils import get_lcc, pass_to_ranks, to_laplace
-from sparse_matrix_analysis import SparseMatrixApproximation
+from sparse_decomposition import SparseMatrixApproximation
 from src.visualization import CLASS_COLOR_DICT
 import matplotlib as mpl
 

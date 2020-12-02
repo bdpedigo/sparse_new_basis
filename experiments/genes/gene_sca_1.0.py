@@ -13,8 +13,8 @@ from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import StandardScaler
 
 from graspologic.plot import pairplot
-from sparse_matrix_analysis import SparseComponentAnalysis
-from sparse_matrix_analysis.utils import calculate_explained_variance_ratio
+from sparse_decomposition import SparseComponentAnalysis
+from sparse_decomposition.utils import calculate_explained_variance_ratio
 from sparse_new_basis.data import load_scRNAseq
 from sparse_new_basis.plot import savefig, set_theme
 

@@ -13,7 +13,7 @@ from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import StandardScaler
 
 from graspologic.plot import pairplot
-from sparse_matrix_analysis import SparseComponentAnalysis
+from sparse_decomposition import SparseComponentAnalysis
 from sparse_new_basis.plot import savefig, set_theme
 
 #%%

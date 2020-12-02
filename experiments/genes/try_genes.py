@@ -13,7 +13,7 @@ from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import StandardScaler
 
 from graspologic.plot import pairplot
-from sparse_matrix_analysis import SparseComponentAnalysis
+from sparse_decomposition import SparseComponentAnalysis
 
 data_dir = Path("sparse_new_basis/data/BP_Barabasi_Share/ScRNAData")
 

@@ -6,8 +6,8 @@ import pandas as pd
 import seaborn as sns
 from scipy.stats import ortho_group
 
-from sparse_matrix_analysis import sparse_component_analysis
-from sparse_matrix_analysis.utils import l1_norm, soft_threshold
+from sparse_decomposition import sparse_component_analysis
+from sparse_decomposition.utils import l1_norm, soft_threshold
 from sparse_new_basis.R import sca_R_epca, setup_R, sma_R_epca
 
 # plotting settings

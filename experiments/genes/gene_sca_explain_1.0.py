@@ -13,8 +13,8 @@ from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import StandardScaler
 
 from graspologic.plot import pairplot
-from sparse_matrix_analysis import SparseComponentAnalysis
-from sparse_matrix_analysis.utils import calculate_explained_variance_ratio
+from sparse_decomposition import SparseComponentAnalysis
+from sparse_decomposition.utils import calculate_explained_variance_ratio
 from sparse_new_basis.data import load_scRNAseq
 from sparse_new_basis.plot import savefig, set_theme
 
@@ -58,13 +58,13 @@ print(f"{time.time() - currtime:.3f} elapsed to scale and center data.")
 #%%
 n_components = 4
 
-from sparse_matrix_analysis.sparse.sparse_matrix_analysis import (
+from sparse_decomposition.sparse.sparse_decomposition import (
     _varimax,
     _polar_rotate_shrink,
     _polar,
 )
 
-from sparse_matrix_analysis.utils import soft_threshold
+from sparse_decomposition.utils import soft_threshold
 from graspologic.embed import selectSVD
 
 
