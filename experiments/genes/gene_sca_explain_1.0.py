@@ -21,7 +21,7 @@ from sparse_new_basis.plot import savefig, set_theme
 set_theme()
 
 
-fig_dir = Path("sparse_new_basis/results/gene_sca__explain_1.0")
+fig_dir = Path("sparse_new_basis/results/gene_sca_explain_1.0")
 
 
 def stashfig(name, *args, **kwargs):

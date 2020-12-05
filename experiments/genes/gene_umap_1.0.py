@@ -93,7 +93,7 @@ print(f"{time.time() - currtime:.3f} elapsed to fit PCA model.")
 #%%
 np.random.seed(seed)
 gammas = [
-    2 * n_components,
+    4 * n_components,
     # 100,
     # 250,
     # 500,
@@ -111,15 +111,12 @@ for i, gamma in enumerate(gammas):
         _max_iter = max_iter
     currtime = time.time()
     sca = SparseComponentAnalysis(
-        n_components=n_components, max_iter=_max_iter, gamma=gamma
+        n_components=n_components, max_iter=_max_iter, gamma=gamma, verbose=10
     )
     X_sca = sca.fit_transform(X_train)
     print(f"{time.time() - currtime:.3f} elapsed.")
     models_by_gamma[gamma] = sca
     Xs_by_gamma[gamma] = X_sca
-    plt.figure()
-    plt.plot(sca._Z_diff_norms_)
-    plt.plot(sca._Y_diff_norms_)
 
     print()
 
@@ -252,273 +249,200 @@ ax.set(
 stashfig(f"umap-n_components={n_components}")
 
 #%%
-n_show = 5
+from hyppo.discrim import DiscrimTwoSample, DiscrimOneSample
 
+discrim = DiscrimOneSample(is_dist=False)
+y = index_train.get_level_values("Neuron_type").values.copy()
+uni_y = np.unique(y)
+name_map = dict(zip(uni_y, range(len(uni_y))))
+y = np.vectorize(name_map.get)(y)
+currtime = time.time()
+output = discrim.test(X_pca, y, reps=0)
 
-def make_plot_df(X, labels=None):
-    columns = [f"Dimension {i+1}" for i in range(X.shape[1])]
-    plot_df = pd.DataFrame(data=X, columns=columns)
-    if labels is not None:
-        plot_df["labels"] = labels
-    return plot_df
+print(f"{time.time() - currtime:.3f} elapsed.")
 
-
-pg = sns.PairGrid(
-    data=make_plot_df(X_pca[:, :n_show], neuron_types),
-    hue="labels",
-    palette=neuron_type_palette,
-    corner=True,
-)
-pg.map_lower(sns.scatterplot, alpha=0.7, linewidth=0, s=10)
-pg.set(xticks=[], yticks=[])
-pg.fig.suptitle("PCA")
-
-axes = pg.axes
-fig = pg.fig
-gs = fig._gridspecs[0]
-for i in range(len(axes)):
-    axes[i, i].remove()
-    axes[i, i] = None
-    ax = fig.add_subplot(gs[i, i])
-    axes[i, i] = ax
-    ax.axis("off")
-    p_nonzero = np.count_nonzero(X_pca[:, i]) / len(X_pca)
-    text = f"{p_nonzero:.2f}"
-    if i == 0:
-        text = "Proportion\nnonzero:\n" + text
-    ax.text(0.5, 0.5, text, ha="center", va="center")
-
-stashfig("pairplot-pca-celegans-genes")
+output
 
 #%%
 
-X_sca = Xs_by_gamma[20]
-pg = sns.PairGrid(
-    data=make_plot_df(X_sca[:, :n_show], neuron_types),
-    hue="labels",
-    palette=neuron_type_palette,
-    corner=True,
-)
-# hide_indices = np.tril_indices_from(axes, 1)
-# for i, j in zip(*hide_indices):
-#     axes[i, j].remove()
-#     axes[i, j] = None
+from sklearn.metrics import pairwise_distances
 
-pg.map_lower(sns.scatterplot, alpha=0.7, linewidth=0, s=10)
-pg.set(xticks=[], yticks=[])
-pg.fig.suptitle("SCA")
+currtime = time.time()
+dist_X_pca = pairwise_distances(X_pca[:2000], metric="cosine")
+print(f"{time.time() - currtime:.3f} elapsed.")
 
-axes = pg.axes
-fig = pg.fig
-gs = fig._gridspecs[0]
-for i in range(len(axes)):
-    axes[i, i].remove()
-    axes[i, i] = None
-    ax = fig.add_subplot(gs[i, i])
-    axes[i, i] = ax
-    ax.axis("off")
-    p_nonzero = np.count_nonzero(X_sca[:, i]) / len(X_sca)
-    text = f"{p_nonzero:.2f}"
-    if i == 0:
-        text = "Proportion\nnonzero:\n" + text
-    ax.text(0.5, 0.5, text, ha="center", va="center")
-
-stashfig("pairplot-sca-celegans-genes")
-
-#%% train vs test PVE
-# TODO this one not really done, not sure if worth showing
-# X_test = scaler.transform(X_test)
-
-# X_test_pca = pca.transform(X_test)
-# explained_variance_pca = calculate_explained_variance_ratio(X_test, pca.components_.T)
-
-# X_test_sca = sca.transform(X_test)
-# explained_variance_sca = calculate_explained_variance_ratio(X_test, sca.components_.T)
-
-# fig, ax = plt.subplots(1, 1, figsize=(8, 4))
-# plt.plot(explained_variance_pca)
-# plt.plot(explained_variance_sca)
+currtime = time.time()
+discrim = DiscrimOneSample(is_dist=True)
+tstat, _ = discrim.test(dist_X_pca, y[:2000], reps=0)
+print(f"{time.time() - currtime:.3f} elapsed.")
+tstat
 
 #%%
-gamma = np.inf
-sca = models_by_gamma[gamma]
-X_transformed = Xs_by_gamma[gamma]
+X_sca = Xs_by_gamma[gammas[0]]
+currtime = time.time()
+dist_X_sca = pairwise_distances(X_sca[:3000], metric="cosine")
+print(f"{time.time() - currtime:.3f} elapsed.")
+
+currtime = time.time()
+discrim = DiscrimOneSample(is_dist=True)
+tstat, _ = discrim.test(dist_X_sca, y[:3000], reps=0)
+print(f"{time.time() - currtime:.3f} elapsed.")
+tstat
+
+#%%
 
 
-def make_neuron_df(X_transformed):
-    columns = [f"component_score_{i}" for i in range(n_components)]
-    neuron_df = pd.DataFrame(index=index_train, data=X_transformed, columns=columns,)
-    # neuron_df["neuron_type"] = scrna_meta.loc[index_train, "Neuron_type"]
-    neuron_df = neuron_df.reset_index(level="Neuron_type")
-    neuron_df.rename(columns={"Neuron_type": "neuron_type"}, inplace=True)
-    for c in columns:
-        neuron_df["abs_" + c] = np.abs(neuron_df[c])
-    return neuron_df
+def compute_metrics(model):
+    final_pve = model.explained_variance_ratio_[-1]
+    n_nonzero = np.count_nonzero(model.components_)
+    p_nonzero = n_nonzero / model.components_.size
+    n_nonzero_cols = np.count_nonzero(model.components_.max(axis=0))
+    p_nonzero_cols = n_nonzero_cols / model.components_.shape[1]
+    output = {
+        "explained_variance": final_pve,
+        "n_nonzero": n_nonzero,
+        "p_nonzero": p_nonzero,
+        "n_nonzero_cols": n_nonzero_cols,
+        "p_nonzero_cols": p_nonzero_cols,
+    }
+    return output
 
 
-def make_genes_annotations(component):
-    nonzero_inds = np.nonzero(component)[0]
-    magnitude_sort_inds = np.argsort(np.abs(component[nonzero_inds]))[::-1]
-    nonzero_inds = nonzero_inds[magnitude_sort_inds]
-    select_gene_names = gene_index[nonzero_inds].copy()
-    select_genes = pd.DataFrame(select_gene_names)
-    select_gene_names = select_gene_names.values
+from sparse_decomposition import SparseComponentAnalysis
 
-    # select_genes = gene_df.loc[select_gene_index].copy()
-    select_genes["component_val"] = component[nonzero_inds]
-    select_genes["component_ind"] = nonzero_inds
-    select_genes = select_genes.set_index("genes")
-    # select_gene_names = select_genes["gene_symbol"]
-    select_annotation_genes = annotation_df[
-        annotation_df["gene"].isin(select_gene_names)
+max_iter = 15
+tol = 1e-4
+n_components_range = [30]  # 60, 120]
+params = []
+S_train_by_params = {}
+models_by_params = {}
+metric_rows = []
+for n_components in n_components_range:
+    gammas = [
+        2 * n_components,
+        0.25 * np.sqrt(n_components * X_train.shape[1]),
+        0.5 * np.sqrt(n_components * X_train.shape[1]),
+        np.sqrt(n_components * X_train.shape[1]),
+        0.5 * n_components * np.sqrt(X_train.shape[1]),
     ]
+    gammas = [float(int(g)) for g in gammas]
+    gammas.append(np.inf)
+    for gamma in gammas:
+        print(f"n_components = {n_components}, gamma = {gamma}")
+        print()
+        curr_params = (n_components, gamma)
+        params.append(curr_params)
 
-    # select_genes = select_genes.reset_index().set_index("gene_symbol")
-    select_genes["cell_annotations"] = ""
-
-    for _, row in select_annotation_genes.iterrows():
-        select_genes.loc[row["gene"], "cell_annotations"] += (
-            str(row["neuron_class"]) + ","
+        # fit model
+        currtime = time.time()
+        sca = SparseComponentAnalysis(
+            n_components=n_components,
+            max_iter=max_iter,
+            gamma=gamma,
+            verbose=10,
+            tol=tol,
         )
+        S_train = sca.fit_transform(X_train)
+        print(f"{time.time() - currtime:.3f} elapsed to train SCA model.")
 
-    return select_genes
+        S_test = sca.transform(X_test)
 
+        # save model fit
+        models_by_params[curr_params] = sca
+        S_train_by_params[curr_params] = S_train
+
+        # save metrics
+        metrics = compute_metrics(sca)
+        metrics["gamma"] = gamma
+        metrics["n_components"] = n_components
+        metric_rows.append(metrics)
+
+        print("\n\n\n")
+
+#%%
+n_subsamples = 5
+n_per_subsample = 4096
+metric = "cosine"
+
+discrim_result_rows = []
+for curr_params in params:
+    X_transformed = S_train_by_params[curr_params]
+    for i in range(n_subsamples):
+        subsample_inds = np.random.choice(
+            len(X_transformed), size=n_per_subsample, replace=False
+        )
+        dist_X_transformed = pairwise_distances(
+            X_transformed[subsample_inds], metric=metric
+        )
+        currtime = time.time()
+        discrim = DiscrimOneSample(is_dist=True)
+        tstat, _ = discrim.test(dist_X_transformed, y[subsample_inds], reps=0)
+        print(f"{time.time() - currtime:.3f} elapsed for discriminability.")
+
+        result = {
+            "tstat": tstat,
+            "n_components": curr_params[0],
+            "gamma": curr_params[1],
+            "discrim_resample": i,
+        }
+        discrim_result_rows.append(result)
+
+discrim_results = pd.DataFrame(discrim_result_rows)
+discrim_results
+#%%
+# palette = dict(zip(gammas, sns.color_palette("deep", 10)))
+# blue_shades = sns.color_palette("Blues", n_colors=len(gammas))[1:]
+# palette = dict(zip(gammas[:-1], blue_shades))
+# red_shades = sns.color_palette("Reds", n_colors=len(gammas))[1:]
+# palette[np.inf] = red_shades[-1]
+
+#%%
+discrim_results["params"] = list(
+    zip(discrim_results["n_components"], discrim_results["gamma"])
+)
+discrim_results
+fig, ax = plt.subplots(1, 1, figsize=(8, 6))
+sns.stripplot(data=discrim_results, x="params", y="tstat", hue="n_components", ax=ax)
+plt.setp(ax.get_xticklabels(), rotation=45, rotation_mode="anchor", ha="right")
+
+stashfig("discrim-by-params")
+
+#%%
+metrics = pd.DataFrame(metric_rows)
+metrics["params"] = list(zip(metrics["n_components"], metrics["gamma"]))
+
+discrim_results["p_nonzero_cols"] = discrim_results["params"].map(
+    metrics.set_index("params")["p_nonzero_cols"]
+)
+
+discrim_results
 
 #%%
 
-neuron_df = make_neuron_df(X_transformed)
+plot_results = discrim_results[discrim_results["n_components"] == 30]
 
-for i in range(5):  # range(n_components):
-    component = sca.components_[i].copy()
-    sign = np.sign(np.max(component[np.nonzero(component)]))
-    component *= sign  # flip to positive at least for plotting
-    select_genes = make_genes_annotations(component)
-    # also flip the scores for plotting
-    # select_genes["component_val"] = select_genes["component_val"] * sign
-    neuron_df[f"component_score_{i}"] *= sign
-    median_mags = neuron_df.groupby("neuron_type")[f"abs_component_score_{i}"].agg(
-        np.median
-    )
-    median_mags = median_mags.sort_values(ascending=False)
-    neuron_types = median_mags.index.values
 
-    fig, axs = plt.subplots(
-        3,
-        1,
-        figsize=(6, 8),
-        gridspec_kw=dict(height_ratios=[0.4, 0.2, 0.4], hspace=0.06),
-    )
+gammas = np.unique(plot_results["gamma"])
+palette = dict(zip(gammas, sns.color_palette("deep", 10)))
+blue_shades = sns.color_palette("Blues", n_colors=len(gammas))[1:]
+palette = dict(zip(gammas[:-1], blue_shades))
+red_shades = sns.color_palette("Reds", n_colors=len(gammas))[1:]
+palette[np.inf] = red_shades[-1]
 
-    y_max = neuron_df[f"component_score_{i}"].max()
-    y_min = neuron_df[f"component_score_{i}"].min()
-    y_range = y_max - y_min
-    y_max += 0.05 * y_range
-    y_min -= 0.05 * y_range
-
-    n_per_row = 20
-
-    row_neuron_types = neuron_types[:n_per_row]
-    ax = axs[0]
-    sns.stripplot(
-        data=neuron_df[neuron_df["neuron_type"].isin(row_neuron_types)],
-        x="neuron_type",
-        y=f"component_score_{i}",
-        hue="neuron_type",
-        hue_order=row_neuron_types,  # ensures sorting stays the same
-        order=row_neuron_types,  # ensures sorting stays the same
-        palette=neuron_type_palette,
-        jitter=0.35,
-        ax=ax,
-        s=3,
-        alpha=0.7,
-    )
-    ax.get_legend().remove()
-    ax.set(
-        xlim=(-1, n_per_row),
-        ylim=(y_min, y_max),
-        xlabel=f"Top {n_per_row} cell types",
-        ylabel="Score",
-        yticks=[0],
-        yticklabels=[0],
-    )
-    ax.axhline(0, color="black", linestyle=":", linewidth=1)
-    ax.tick_params(length=0, labelsize="xx-small")
-    plt.setp(
-        ax.get_xticklabels(),
-        rotation=90,
-        rotation_mode="anchor",
-        ha="right",
-        va="center",
-    )
-    for tick in ax.get_xticklabels():
-        text = tick.get_text()
-        tick.set_color(neuron_type_palette[text])
-
-    ax = axs[2]
-    plot_select_genes = select_genes.reset_index()
-    plot_select_genes = plot_select_genes.iloc[:n_per_row]
-    plot_select_genes["x"] = range(len(plot_select_genes))
-    sns.scatterplot(
-        data=plot_select_genes, x="x", y="component_val", color="black", s=30
-    )
-    ax.xaxis.set_major_locator(plt.FixedLocator(np.arange(n_per_row)))
-    ax.xaxis.set_major_formatter(plt.FixedFormatter(plot_select_genes["genes"].values))
-    ax.tick_params(length=0, labelsize="xx-small")
-    plt.setp(
-        ax.get_xticklabels(),
-        rotation=90,
-        rotation_mode="anchor",
-        ha="right",
-        va="center",
-    )
-    ax.axhline(0, color="black", linestyle=":", linewidth=1)
-    ax.yaxis.set_major_locator(plt.FixedLocator([0]))
-    ax.yaxis.set_major_formatter(plt.FixedFormatter([0]))
-    ax.set(
-        xlim=(-1, n_per_row), xlabel=f"Top {n_per_row} genes", ylabel="Component",
-    )
-
-    annot_ax = axs[1]
-    annot_ax.set_zorder(-100)
-    sns.utils.despine(ax=annot_ax, left=True, bottom=True)
-
-    annot_ax.set(xlim=(-1, n_per_row), ylim=(0, 1.5), xticks=[], yticks=[], ylabel="")
-
-    y_min, y_max = ax.get_ylim()
-    y_range = y_max - y_min
-    for x, row in plot_select_genes.iterrows():
-        if row["cell_annotations"] != "":
-            cell_types = np.unique(row["cell_annotations"].split(",")[:-1])
-            cell_types = [
-                cell_type
-                for cell_type in cell_types
-                if cell_type in neuron_type_palette
-            ]
-            y_last = y_min
-            for c, cell_type in enumerate(cell_types):
-                if cell_type in neuron_type_palette:
-                    y_top = y_last + y_range / len(cell_types)
-                    ax.fill_between(
-                        (x - 0.5, x + 0.5),
-                        y_last,
-                        y_top,
-                        color=neuron_type_palette[cell_type],
-                        alpha=1,
-                        zorder=-1,
-                        facecolor="white",
-                    )
-                    y_last = y_top
-
-                    cell_loc = np.where(row_neuron_types == cell_type)[0]
-                    if len(cell_loc) > 0:
-                        annot_ax.plot(
-                            [x, cell_loc[0]],
-                            [0.02, 1],
-                            color=neuron_type_palette[cell_type],
-                        )
-
-    fig.suptitle(f"Component {i + 1}", y=0.93)
-
-    stashfig(f"component_{i+1}_relationplot-gamma={gamma}", format="png")
+fig, ax = plt.subplots(1, 1, figsize=(8, 6))
+sns.scatterplot(
+    data=plot_results,
+    x="p_nonzero_cols",
+    y="tstat",
+    hue="gamma",
+    palette=palette,
+    ax=ax,
+)
 
 #%%
+dist_X_transformed = pairwise_distances(X_transformed, metric=metric)
+currtime = time.time()
+discrim = DiscrimOneSample(is_dist=True)
+tstat, _ = discrim.test(dist_X_transformed, y, reps=0)
+print(f"{time.time() - currtime:.3f} elapsed for discriminability.")
+
