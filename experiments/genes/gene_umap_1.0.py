@@ -445,4 +445,3 @@ currtime = time.time()
 discrim = DiscrimOneSample(is_dist=True)
 tstat, _ = discrim.test(dist_X_transformed, y, reps=0)
 print(f"{time.time() - currtime:.3f} elapsed for discriminability.")
-

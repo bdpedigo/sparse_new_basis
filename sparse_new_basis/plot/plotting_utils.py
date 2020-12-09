@@ -25,12 +25,12 @@ def set_theme(rc_dict=DEFAULT_RC_PARAMS):
 def savefig(
     fig_dir,
     name,
-    *args,
     transparent=False,
     facecolor="w",
     dpi=300,
     pad_inches=0.25,
     bbox_inches="tight",
+    format="png",
     **kwargs,
 ):
     plt.savefig(
@@ -40,4 +40,5 @@ def savefig(
         dpi=dpi,
         pad_inches=pad_inches,
         bbox_inches=bbox_inches,
+        **kwargs,
     )

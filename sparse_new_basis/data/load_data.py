@@ -10,7 +10,7 @@ def load_scRNAseq(fillna=True, print_time=True):
     sequencing_loc = DATA_DIR / "Celegans_ScRNA_OnlyLabeledNeurons.csv"
     currtime = time.time()
     sequencing_df = pd.read_csv(sequencing_loc, skiprows=[1])
-    
+
     # this appears to be faster than fillna during pivot using .pivot_table()
     sequencing_df = sequencing_df.pivot(
         index="neurons", columns="genes", values="Count"

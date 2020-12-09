@@ -11,7 +11,7 @@ import pandas as pd
 import seaborn as sns
 from hyppo.discrim import DiscrimOneSample, DiscrimTwoSample
 from matplotlib.lines import Line2D
-from sklearn.decomposition import PCA
+from sklearn.decomposition import PCA, SparsePCA
 from sklearn.feature_selection import VarianceThreshold
 from sklearn.metrics import pairwise_distances
 from sklearn.model_selection import train_test_split
@@ -21,7 +21,11 @@ from umap import UMAP
 
 from graspologic.plot import pairplot
 from sparse_decomposition import SparseComponentAnalysis
-from sparse_decomposition.utils import calculate_explained_variance_ratio
+from sparse_decomposition.utils import (
+    calculate_explained_variance_ratio,
+    l1_norm,
+    proportion_variance_explained,
+)
 from sparse_new_basis.data import load_scRNAseq
 from sparse_new_basis.plot import savefig, set_theme
 
@@ -83,30 +87,38 @@ X_test = scaler.transform(X_test)
 #%%
 
 
-def compute_metrics(model):
-    final_pve = model.explained_variance_ratio_[-1]
+def compute_metrics(model, X_train, X_test):
+    train_pve = proportion_variance_explained(X_train, model.components_.T)
+    test_pve = proportion_variance_explained(X_test, model.components_.T)
     n_nonzero = np.count_nonzero(model.components_)
     p_nonzero = n_nonzero / model.components_.size
     n_nonzero_cols = np.count_nonzero(model.components_.max(axis=0))
     p_nonzero_cols = n_nonzero_cols / model.components_.shape[1]
+    component_l1 = l1_norm(model.components_)
     output = {
-        "explained_variance": final_pve,
+        "train_pve": train_pve,
+        "test_pve": test_pve,
         "n_nonzero": n_nonzero,
         "p_nonzero": p_nonzero,
         "n_nonzero_cols": n_nonzero_cols,
         "p_nonzero_cols": p_nonzero_cols,
+        "component_l1": component_l1,
     }
     return output
 
 
-max_iter = 15
-tol = 1e-4
-n_components_range = [30]  # 60, 120]
 params = []
 S_train_by_params = {}
 S_test_by_params = {}
 models_by_params = {}
 metric_rows = []
+
+#%%
+# Sparse Component Analysis and PCA
+method = "SCA"
+max_iter = 15
+tol = 1e-4
+n_components_range = [30]
 for n_components in n_components_range:
     gammas = [
         2 * n_components,
@@ -118,39 +130,97 @@ for n_components in n_components_range:
     gammas = [float(int(g)) for g in gammas]
     gammas.append(np.inf)
     for gamma in gammas:
-        print(f"n_components = {n_components}, gamma = {gamma}")
+        if gamma == np.inf:
+            method = "PCA"
+        else:
+            method = "SCA"
+        print(f"method = {method}, n_components = {n_components}, gamma = {gamma}")
         print()
-        curr_params = (n_components, gamma)
+        curr_params = (method, n_components, gamma)
         params.append(curr_params)
 
         # fit model
         currtime = time.time()
-        sca = SparseComponentAnalysis(
+        model = SparseComponentAnalysis(
             n_components=n_components,
             max_iter=max_iter,
             gamma=gamma,
             verbose=10,
             tol=tol,
         )
-        S_train = sca.fit_transform(X_train)
-        print(f"{time.time() - currtime:.3f} elapsed to train SCA model.")
+        S_train = model.fit_transform(X_train)
+        train_time = time.time() - currtime
+        print(f"{train_time:.3f} elapsed to train model.")
 
-        S_test = sca.transform(X_test)
+        S_test = model.transform(X_test)
 
         # save model fit
-        models_by_params[curr_params] = sca
+        models_by_params[curr_params] = model
         S_train_by_params[curr_params] = S_train
         S_test_by_params[curr_params] = S_test
 
         # save metrics
-        metrics = compute_metrics(sca)
-        metrics["gamma"] = gamma
+        metrics = compute_metrics(model, X_train, X_test)
+        metrics["sparsity_param"] = gamma
+        metrics["sparsity_level"] = gamma
         metrics["n_components"] = n_components
+        metrics["train_time"] = train_time
+        metrics["method"] = method
         metric_rows.append(metrics)
+        print(f"Component L0 ratio: {metrics['p_nonzero']}")
+        print(f"Component L0 columns: {metrics['p_nonzero_cols']}")
 
         print("\n\n\n")
 
 #%%
+# SparsePCA (Online Dictionary Learning)
+method = "SparsePCA"
+max_iter = 10
+for n_components in n_components_range:
+    alphas = [1, 5, 15, 30, 40]
+    alphas = [float(int(a)) for a in alphas]
+    for alpha in alphas:
+        print(f"method = {method}, n_components = {n_components}, alpha = {alpha}")
+        print()
+        curr_params = (method, n_components, alpha)
+        params.append(curr_params)
+
+        # fit model
+        currtime = time.time()
+        model = SparsePCA(
+            n_components=n_components,
+            max_iter=max_iter,
+            alpha=alpha,
+            verbose=0,
+            tol=tol,
+            n_jobs=1,
+        )
+        S_train = model.fit_transform(X_train)
+        train_time = time.time() - currtime
+        print(f"{train_time:.3f} elapsed to train model.")
+
+        S_test = model.transform(X_test)
+
+        # save model fit
+        models_by_params[curr_params] = model
+        S_train_by_params[curr_params] = S_train
+        S_test_by_params[curr_params] = S_test
+
+        # save metrics
+        metrics = compute_metrics(model, X_train, X_test)
+        metrics["sparsity_param"] = alpha
+        metrics["sparsity_level"] = -alpha
+        metrics["n_components"] = n_components
+        metrics["train_time"] = train_time
+        metrics["method"] = method
+        metric_rows.append(metrics)
+        print(f"Component L0 ratio: {metrics['p_nonzero']}")
+        print(f"Component L0 columns: {metrics['p_nonzero_cols']}")
+
+        print("\n\n\n")
+
+#%%
+# Discriminability as a metric
 n_subsamples = 10
 n_per_subsample = 2 ** 12
 # n_per_subsample = None
@@ -169,6 +239,7 @@ discrim_result_rows = []
 for curr_params in params:
     print(curr_params)
     print()
+    model = models_by_params[curr_params]
     for mode in ["test"]:
         if mode == "train":
             S = S_train_by_params[curr_params]
@@ -192,120 +263,260 @@ for curr_params in params:
             print(f"{time.time() - currtime:.3f} elapsed for discriminability.")
 
             # save results
-            result = {
-                "tstat": tstat,
-                "n_components": curr_params[0],
-                "gamma": curr_params[1],
-                "discrim_resample": i,
-                "mode": mode,
-            }
-            discrim_result_rows.append(result)
+            metrics = {}
+            metrics["method"] = curr_params[0]
+            metrics["tstat"] = tstat
+            metrics["n_components"] = curr_params[1]
+            metrics["discrim_resample"] = i
+            metrics["mode"] = mode
+            metrics["sparsity_param"] = curr_params[2]
+            discrim_result_rows.append(metrics)
 
         print()
+
 discrim_results = pd.DataFrame(discrim_result_rows)
 discrim_results
 
 #%%
 discrim_results["params"] = list(
-    zip(discrim_results["n_components"], discrim_results["gamma"])
+    zip(
+        discrim_results["method"],
+        discrim_results["n_components"],
+        discrim_results["sparsity_param"],
+    )
+)
+discrim_results["pretty_params"] = ""
+for i, row in discrim_results.iterrows():
+    method = row["method"]
+    if method == "PCA":
+        discrim_results.loc[i, "pretty_params"] = "PCA"
+    else:
+        if method == "SCA":
+            symbol = r"$\gamma$"
+        elif method == "SparsePCA":
+            symbol = r"$\alpha$"
+        discrim_results.loc[i, "pretty_params"] = (
+            row["method"] + ", " + symbol + "=" + f"{row['sparsity_param']:.0f}"
+        )
+
+#%%
+discrim_results = discrim_results.sort_values(
+    ["method", "n_components", "sparsity_param"]
 )
 discrim_results
-fig, ax = plt.subplots(1, 1, figsize=(8, 6))
-sns.stripplot(data=discrim_results, x="params", y="tstat", hue="mode", ax=ax)
-plt.setp(ax.get_xticklabels(), rotation=45, rotation_mode="anchor", ha="right")
+#%%
+# red_shades = sns.color_palette("Reds", n_colors=len(gammas)+1)[-2:-1]
+# gammas = np.unique(discrim_results[discrim_results['method'] == 'SCA']['sparsity_param'])
+# alphas = np.unique(discrim_results[discrim_results['method'] == 'SparsePCA']['sparsity_param'])
+# push = 2
+# blue_shades = sns.color_palette("Blues", n_colors=len(gammas)+push)[push:]
+# green_shades = sns.color_palette("Greens", n_colors=len(alphas)+push)[push:][::-1]
 
-stashfig("discrim-by-params")
+# shades = red_shades + blue_shades + green_shades
+# palette = dict(zip(discrim_results['params'], shades))
+# palette
 
 #%%
 metrics = pd.DataFrame(metric_rows)
-metrics["params"] = list(zip(metrics["n_components"], metrics["gamma"]))
-
-discrim_results["p_nonzero_cols"] = discrim_results["params"].map(
-    metrics.set_index("params")["p_nonzero_cols"]
+metrics["params"] = list(
+    zip(metrics["method"], metrics["n_components"], metrics["sparsity_param"])
 )
+metrics = metrics.set_index("params")
+metrics
 
-discrim_results
+#%%
+plot_results = discrim_results[discrim_results["mode"] == "test"].copy()
+plot_results = plot_results.groupby("params").mean()
+plot_results = pd.concat(
+    (plot_results, metrics.drop(["n_components", "sparsity_param", "method"], axis=1)),
+    axis=1,
+)
+plot_results = (
+    plot_results.reset_index()
+    .rename({"level_0": "method"}, axis=1)
+    .drop(["level_1", "level_2"], axis=1)
+)
+plot_results = plot_results.sort_values(["method", "n_components", "sparsity_level"])
+#%%
+
+plot_results["pretty_params"] = ""
+for i, row in plot_results.iterrows():
+    method = row["method"]
+    if method == "PCA":
+        plot_results.loc[i, "pretty_params"] = "PCA"
+    else:
+        if method == "SCA":
+            symbol = r"$\gamma$"
+        elif method == "SparsePCA":
+            symbol = r"$\alpha$"
+        plot_results.loc[i, "pretty_params"] = (
+            row["method"] + ", " + symbol + "=" + f"{row['sparsity_param']:.0f}"
+        )
+plot_results
+
 
 #%%
 
-plot_results = discrim_results[discrim_results["mode"] == "test"]
-plot_results = plot_results.groupby("params").mean()
+red_shades = sns.color_palette("Reds", n_colors=len(gammas) + 1)[-2:-1]
+gammas = np.unique(plot_results[plot_results["method"] == "SCA"]["sparsity_param"])
+alphas = np.unique(
+    plot_results[plot_results["method"] == "SparsePCA"]["sparsity_param"]
+)
+push = 2
+blue_shades = sns.color_palette("Blues", n_colors=len(gammas) + push)[push:]
+green_shades = sns.color_palette("Greens", n_colors=len(alphas) + push)[push:]
 
-gammas = np.unique(plot_results["gamma"])
-palette = dict(zip(gammas, sns.color_palette("deep", 10)))
-blue_shades = sns.color_palette("Blues", n_colors=len(gammas))[1:]
-palette = dict(zip(gammas[:-1], blue_shades))
-red_shades = sns.color_palette("Reds", n_colors=len(gammas))[1:]
-palette[np.inf] = red_shades[-1]
+shades = red_shades + blue_shades + green_shades
+palette = dict(zip(plot_results["pretty_params"], shades))
+palette
+
+line_palette = dict(
+    zip(
+        ["PCA", "SCA", "SparsePCA"], [red_shades[-1], blue_shades[-1], green_shades[-1]]
+    )
+)
+#%%
+fig, ax = plt.subplots(1, 1, figsize=(8, 6))
+sns.scatterplot(
+    data=plot_results,
+    x="p_nonzero_cols",
+    y="tstat",
+    hue="pretty_params",
+    palette=palette,
+    ax=ax,
+    s=100,
+)
+handles, labels = ax.get_legend_handles_labels()
+handles = handles[:11]
+labels = labels[:11]
+sns.lineplot(
+    data=plot_results,
+    x="p_nonzero_cols",
+    y="tstat",
+    hue="method",
+    zorder=-1,
+    palette=line_palette,
+)
+ax.get_legend().remove()
+ax.legend(handles=handles, labels=labels, bbox_to_anchor=(1, 1), loc="upper left")
+ax.set(ylabel="Discriminability", xlabel="# of genes used")
+stashfig("discriminability-vs-n_genes-new")
+
+#%%
+
+# plot_results["p_nonzero_cols_jitter"] = plot_results[
+#     "p_nonzero_cols"
+# ] + np.random.uniform(-0.02, 0.02, size=len(plot_results))
+# mean_results = plot_results.groupby("params").mean()
+
+# gammas = np.unique(plot_results["gamma"])
+
+# palette = dict(zip(gammas, sns.color_palette("deep", 10)))
+# blue_shades = sns.color_palette("Blues", n_colors=len(gammas))[1:]
+# palette = dict(zip(gammas[:-1], blue_shades))
+# red_shades = sns.color_palette("Reds", n_colors=len(gammas))[1:]
+# palette[np.inf] = red_shades[-1]
 
 fig, ax = plt.subplots(1, 1, figsize=(8, 6))
 sns.scatterplot(
     data=plot_results,
     x="p_nonzero_cols",
     y="tstat",
-    hue="gamma",
+    hue="params",
     palette=palette,
     ax=ax,
+    s=10,
 )
+# sns.scatterplot(
+#     data=mean_results,
+#     x="p_nonzero_cols",
+#     y="tstat",
+#     hue="params",
+#     palette=palette,
+#     ax=ax,
+#     marker="_",
+#     s=200,
+#     linewidth=4,
+#     legend=False,
+# )
 ax.get_legend().remove()
 ax.legend(bbox_to_anchor=(1, 1), loc="upper left")
 ax.set(ylabel="Discriminability", xlabel="# of genes used")
+stashfig("discriminability-vs-n_genes-new")
 
 #%%
-
-
-def calc_n_tests(positivity, n_per_batch):
-    n_samples = 1000
-    n_batches = n_samples / n_per_batch
-    p_all_negative = (1 - positivity) ** n_per_batch
-    p_retest = 1 - p_all_negative
-    n_tests_original = n_batches
-    n_tests_repeat = p_retest * n_batches * n_per_batch
-    n_tests = n_tests_original + n_tests_repeat
-    return n_tests / n_samples
-
-
-rows = []
-for positivity in np.linspace(0.01, 0.15, 10):
-    for n_per_batch in np.arange(2, 20, 1):
-        n_tests = calc_n_tests(positivity, n_per_batch)
-        rows.append(
-            {"positivity": positivity, "n_per_batch": n_per_batch, "n_tests": n_tests}
-        )
-
-results = pd.DataFrame(rows)
-argmins = results.groupby("positivity")["n_tests"].idxmin()
 fig, ax = plt.subplots(1, 1, figsize=(8, 6))
-sns.lineplot(data=results, x="n_per_batch", y="n_tests", hue="positivity", ax=ax)
 sns.scatterplot(
-    data=results.loc[argmins],
-    x="n_per_batch",
-    y="n_tests",
-    hue="positivity",
+    data=plot_results,
+    x="p_nonzero",
+    y="p_nonzero_cols",
     ax=ax,
-    linewidth=0,
-    marker="o",
-    s=50,
+    hue="params",
+    palette=palette,
 )
-handles, labels = ax.get_legend_handles_labels()
-n_show = len(handles) // 2
-handles = handles[:n_show]
-labels = labels[:n_show]
-
-dummy_marker = Line2D([0], [0], color="black", lw=0, marker="o")
-handles.append(dummy_marker)
-labels.append("Minimum")
-
-ax.get_legend().remove()
-ax.legend(
-    handles=handles,
-    labels=labels,
-    bbox_to_anchor=(1, 1),
-    loc="upper left",
-    title=r"$P_{infected}$",
+#%%
+fig, ax = plt.subplots(1, 1, figsize=(8, 6))
+sns.scatterplot(
+    data=plot_results,
+    x="p_nonzero",
+    y="train_time",
+    ax=ax,
+    hue="params",
+    palette=palette,
 )
-ax.axhline(1, linestyle="--", color="dimgrey")
-ax.text(1.5, 1.01, "No batch testing", ha="left", va="bottom", color="dimgrey")
-ax.set(xlabel="Batch size", ylabel="# tests required per sample")
-ax.xaxis.set_major_locator(plt.IndexLocator(base=4, offset=2))
-stashfig("batch-testing")
+
+#%%
+from sklearn.decomposition import PCA
+from scipy.stats import ortho_group
+
+n_components = 10
+pca = PCA(n_components=n_components)
+pca.fit_transform(X_train[: 2 ** 11])
+Y = pca.components_.T
+
+#%%
+rows = []
+for i in range(1000):
+    R = ortho_group.rvs(n_components)
+    loading_l1 = l1_norm(Y @ R)
+    rows.append({"rotation": "random", "l1_norm": loading_l1})
+
+from sparse_decomposition.decomposition.decomposition import _varimax
+
+Y_varimax = _varimax(Y)
+loading_l1 = l1_norm(Y_varimax)
+rows.append({"rotation": "varimax", "l1_norm": loading_l1})
+results = pd.DataFrame(rows)
+#%%
+import matplotlib.transforms as transforms
+
+fig, ax = plt.subplots(1, 1, figsize=(8, 4))
+sns.histplot(
+    data=results[results["rotation"] == "random"],
+    x="l1_norm",
+    ax=ax,
+    stat="density",
+    kde=True,
+    element="step",
+)
+ax.axvline(loading_l1, color="darkred", linestyle="--", linewidth=2)
+# ax.axvline(l1_norm(Y), color='blue', linestyle='--', linewidth=2)
+ax.annotate(
+    "Varimax\nrotation",
+    (loading_l1 + 2, 0.8),
+    (20, 20),
+    xycoords=transforms.blended_transform_factory(ax.transData, ax.transAxes),
+    textcoords="offset points",
+    arrowprops=dict(arrowstyle="->"),
+)
+ax.annotate(
+    "Random\nrotation",
+    (605, 0.6),
+    (-100, 20),
+    xycoords=transforms.blended_transform_factory(ax.transData, ax.transAxes),
+    textcoords="offset points",
+    arrowprops=dict(arrowstyle="->"),
+)
+ax.set(xlabel=r"$\|\|YR\|\|_{1}$ (element-wise norm)", ylabel="", yticks=[])
+ax.spines["left"].set_visible(False)
+stashfig("random-rotations")

@@ -111,12 +111,13 @@ print(f"{time.time() - currtime:.3f} elapsed to fit PCA model.")
 #%%
 np.random.seed(seed)
 gammas = [
+    # np.inf
     n_components,
-    100,
-    250,
-    500,
-    int(np.sqrt(X_train.shape[1]) * n_components),
-    np.inf,
+    # 100,
+    # 250,
+    # 500,
+    # int(np.sqrt(X_train.shape[1]) * n_components),
+    # np.inf,
 ]
 gammas = [float(g) for g in gammas]
 models_by_gamma = {}
@@ -135,21 +136,18 @@ for i, gamma in enumerate(gammas):
     print(f"{time.time() - currtime:.3f} elapsed.")
     models_by_gamma[gamma] = sca
     Xs_by_gamma[gamma] = X_sca
-    plt.figure()
-    plt.plot(sca._Z_diff_norms_)
-    plt.plot(sca._Y_diff_norms_)
 
     model_name = f"sca_gamma={gamma}"
-    with open(output_dir / Path("models") / f"{model_name}.pkl", "wb") as f:
-        pickle.dump(sca, f)
+    # with open(output_dir / Path("models") / f"{model_name}.pkl", "wb") as f:
+    #     pickle.dump(sca, f)
 
-    print()
+    # print()
 
 #%%
 
-gamma = 20.0
-with open(output_dir / Path("models") / f"sca_gamma={gamma}.pkl", "rb") as f:
-    sca = pickle.load(f)
+# gamma = 20.0
+# with open(output_dir / Path("models") / f"sca_gamma={gamma}.pkl", "rb") as f:
+#     sca = pickle.load(f)
 
 #%%
 
@@ -170,52 +168,52 @@ scree_df = pd.DataFrame(rows)
 
 #%% palette
 
-palette = dict(zip(gammas, sns.color_palette("deep", 10)))
-blue_shades = sns.color_palette("Blues", n_colors=len(gammas))[1:]
-palette = dict(zip(gammas[:-1], blue_shades))
-red_shades = sns.color_palette("Reds", n_colors=len(gammas))[1:]
-palette[np.inf] = red_shades[-1]
+# palette = dict(zip(gammas, sns.color_palette("deep", 10)))
+# blue_shades = sns.color_palette("Blues", n_colors=len(gammas))[1:]
+# palette = dict(zip(gammas[:-1], blue_shades))
+# red_shades = sns.color_palette("Reds", n_colors=len(gammas))[1:]
+# palette[np.inf] = red_shades[-1]
 
 #%%
-fig, ax = plt.subplots(1, 1, figsize=(8, 4))
+# fig, ax = plt.subplots(1, 1, figsize=(8, 4))
 
-sns.lineplot(
-    data=scree_df,
-    x="n_components",
-    y="explained_variance",
-    hue="gamma",
-    ax=ax,
-    marker="o",
-    palette=palette,
-)
-ax.get_legend().remove()
-ax.legend(bbox_to_anchor=(1, 1), loc="upper left", title="Gamma")
-# ax.legend().set_title("Gamma")
-ax.set(ylabel="Cumulative explained variance", xlabel="# of PCs")
-ax.yaxis.set_major_locator(plt.MaxNLocator(3))
-ax.xaxis.set_major_locator(plt.IndexLocator(base=5, offset=-1))
-stashfig("screeplot")
-
-#%%
-fig, ax = plt.subplots(1, 1, figsize=(8, 4))
-
-sns.lineplot(
-    data=scree_df,
-    x="n_nonzero",
-    y="explained_variance",
-    hue="gamma",
-    ax=ax,
-    marker="o",
-    palette=palette,
-)
-ax.get_legend().remove()
-ax.legend(bbox_to_anchor=(1, 1), loc="upper left", title="Gamma")
-# ax.legend().set_title("Gamma")
-ax.set(ylabel="Cumulative explained variance", xlabel="# nonzero elements")
-plt.xscale("log")
-ax.yaxis.set_major_locator(plt.MaxNLocator(3))
+# sns.lineplot(
+#     data=scree_df,
+#     x="n_components",
+#     y="explained_variance",
+#     hue="gamma",
+#     ax=ax,
+#     marker="o",
+#     palette=palette,
+# )
+# ax.get_legend().remove()
+# ax.legend(bbox_to_anchor=(1, 1), loc="upper left", title="Gamma")
+# # ax.legend().set_title("Gamma")
+# ax.set(ylabel="Cumulative explained variance", xlabel="# of PCs")
+# ax.yaxis.set_major_locator(plt.MaxNLocator(3))
 # ax.xaxis.set_major_locator(plt.IndexLocator(base=5, offset=-1))
-stashfig("screeplot-by-params")
+# stashfig("screeplot")
+
+#%%
+# fig, ax = plt.subplots(1, 1, figsize=(8, 4))
+
+# sns.lineplot(
+#     data=scree_df,
+#     x="n_nonzero",
+#     y="explained_variance",
+#     hue="gamma",
+#     ax=ax,
+#     marker="o",
+#     palette=palette,
+# )
+# ax.get_legend().remove()
+# ax.legend(bbox_to_anchor=(1, 1), loc="upper left", title="Gamma")
+# # ax.legend().set_title("Gamma")
+# ax.set(ylabel="Cumulative explained variance", xlabel="# nonzero elements")
+# plt.xscale("log")
+# ax.yaxis.set_major_locator(plt.MaxNLocator(3))
+# # ax.xaxis.set_major_locator(plt.IndexLocator(base=5, offset=-1))
+# stashfig("screeplot-by-params")
 
 
 #%%
@@ -225,75 +223,75 @@ neuron_type_palette = dict(zip(np.unique(neuron_types), cc.glasbey_light))
 n_show = 5
 
 
-def make_plot_df(X, labels=None):
-    columns = [f"Dimension {i+1}" for i in range(X.shape[1])]
-    plot_df = pd.DataFrame(data=X, columns=columns)
-    if labels is not None:
-        plot_df["labels"] = labels
-    return plot_df
+# def make_plot_df(X, labels=None):
+#     columns = [f"Dimension {i+1}" for i in range(X.shape[1])]
+#     plot_df = pd.DataFrame(data=X, columns=columns)
+#     if labels is not None:
+#         plot_df["labels"] = labels
+#     return plot_df
 
 
-pg = sns.PairGrid(
-    data=make_plot_df(X_pca[:, :n_show], neuron_types),
-    hue="labels",
-    palette=neuron_type_palette,
-    corner=True,
-)
-pg.map_lower(sns.scatterplot, alpha=0.7, linewidth=0, s=10)
-pg.set(xticks=[], yticks=[])
-pg.fig.suptitle("PCA")
+# pg = sns.PairGrid(
+#     data=make_plot_df(X_pca[:, :n_show], neuron_types),
+#     hue="labels",
+#     palette=neuron_type_palette,
+#     corner=True,
+# )
+# pg.map_lower(sns.scatterplot, alpha=0.7, linewidth=0, s=10)
+# pg.set(xticks=[], yticks=[])
+# pg.fig.suptitle("PCA")
 
-axes = pg.axes
-fig = pg.fig
-gs = fig._gridspecs[0]
-for i in range(len(axes)):
-    axes[i, i].remove()
-    axes[i, i] = None
-    ax = fig.add_subplot(gs[i, i])
-    axes[i, i] = ax
-    ax.axis("off")
-    p_nonzero = np.count_nonzero(X_pca[:, i]) / len(X_pca)
-    text = f"{p_nonzero:.2f}"
-    if i == 0:
-        text = "Proportion\nnonzero:\n" + text
-    ax.text(0.5, 0.5, text, ha="center", va="center")
+# axes = pg.axes
+# fig = pg.fig
+# gs = fig._gridspecs[0]
+# for i in range(len(axes)):
+#     axes[i, i].remove()
+#     axes[i, i] = None
+#     ax = fig.add_subplot(gs[i, i])
+#     axes[i, i] = ax
+#     ax.axis("off")
+#     p_nonzero = np.count_nonzero(X_pca[:, i]) / len(X_pca)
+#     text = f"{p_nonzero:.2f}"
+#     if i == 0:
+#         text = "Proportion\nnonzero:\n" + text
+#     ax.text(0.5, 0.5, text, ha="center", va="center")
 
-stashfig("pairplot-pca-celegans-genes")
+# stashfig("pairplot-pca-celegans-genes")
 
 #%%
 
-X_sca = Xs_by_gamma[20]
-pg = sns.PairGrid(
-    data=make_plot_df(X_sca[:, :n_show], neuron_types),
-    hue="labels",
-    palette=neuron_type_palette,
-    corner=True,
-)
-# hide_indices = np.tril_indices_from(axes, 1)
-# for i, j in zip(*hide_indices):
-#     axes[i, j].remove()
-#     axes[i, j] = None
+# X_sca = Xs_by_gamma[20]
+# pg = sns.PairGrid(
+#     data=make_plot_df(X_sca[:, :n_show], neuron_types),
+#     hue="labels",
+#     palette=neuron_type_palette,
+#     corner=True,
+# )
+# # hide_indices = np.tril_indices_from(axes, 1)
+# # for i, j in zip(*hide_indices):
+# #     axes[i, j].remove()
+# #     axes[i, j] = None
 
-pg.map_lower(sns.scatterplot, alpha=0.7, linewidth=0, s=10)
-pg.set(xticks=[], yticks=[])
-pg.fig.suptitle("SCA")
+# pg.map_lower(sns.scatterplot, alpha=0.7, linewidth=0, s=10)
+# pg.set(xticks=[], yticks=[])
+# pg.fig.suptitle("SCA")
 
-axes = pg.axes
-fig = pg.fig
-gs = fig._gridspecs[0]
-for i in range(len(axes)):
-    axes[i, i].remove()
-    axes[i, i] = None
-    ax = fig.add_subplot(gs[i, i])
-    axes[i, i] = ax
-    ax.axis("off")
-    p_nonzero = np.count_nonzero(X_sca[:, i]) / len(X_sca)
-    text = f"{p_nonzero:.2f}"
-    if i == 0:
-        text = "Proportion\nnonzero:\n" + text
-    ax.text(0.5, 0.5, text, ha="center", va="center")
+# axes = pg.axes
+# fig = pg.fig
+# gs = fig._gridspecs[0]
+# for i in range(len(axes)):
+#     axes[i, i].remove()
+#     axes[i, i] = None
+#     ax = fig.add_subplot(gs[i, i])
+#     axes[i, i] = ax
+#     ax.axis("off")
+#     p_nonzero = np.count_nonzero(X_sca[:, i]) / len(X_sca)
+#     text = f"{p_nonzero:.2f}"
+#     if i == 0:
+#         text = "Proportion\nnonzero:\n" + text
+#     ax.text(0.5, 0.5, text, ha="center", va="center")
 
-stashfig("pairplot-sca-celegans-genes")
+# stashfig("pairplot-sca-celegans-genes")
 
 #%% train vs test PVE
 # TODO this one not really done, not sure if worth showing
@@ -310,7 +308,7 @@ stashfig("pairplot-sca-celegans-genes")
 # plt.plot(explained_variance_sca)
 
 #%%
-gamma = np.inf
+gamma = gammas[0]
 sca = models_by_gamma[gamma]
 X_transformed = Xs_by_gamma[gamma]
 
@@ -358,7 +356,7 @@ def make_genes_annotations(component):
 
 neuron_df = make_neuron_df(X_transformed)
 
-for i in range(5):  # range(n_components):
+for i in range(n_components):
     component = sca.components_[i].copy()
     sign = np.sign(np.max(component[np.nonzero(component)]))
     component *= sign  # flip to positive at least for plotting
@@ -445,11 +443,11 @@ for i in range(5):  # range(n_components):
     ax.yaxis.set_major_locator(plt.FixedLocator([0]))
     ax.yaxis.set_major_formatter(plt.FixedFormatter([0]))
     ax.set(
-        xlim=(-1, n_per_row), xlabel=f"Top {n_per_row} genes", ylabel="Component",
+        xlim=(-1, n_per_row), xlabel=f"Top {n_per_row} genes", ylabel="Loading",
     )
 
     annot_ax = axs[1]
-    annot_ax.set_zorder(-100)
+    annot_ax.set_zorder(-1)
     sns.utils.despine(ax=annot_ax, left=True, bottom=True)
 
     annot_ax.set(xlim=(-1, n_per_row), ylim=(0, 1.5), xticks=[], yticks=[], ylabel="")
@@ -489,8 +487,4 @@ for i in range(5):  # range(n_components):
 
     fig.suptitle(f"Component {i + 1}", y=0.93)
 
-    stashfig(f"component_{i+1}_relationplot-gamma={gamma}", format="png")
-
-#%%
-
-from umap import UMAP
+    stashfig(f"component_{i+1}_relationplot-gamma={int(gamma)}.png", format="png")

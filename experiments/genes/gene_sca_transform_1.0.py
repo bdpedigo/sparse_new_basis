@@ -130,7 +130,7 @@ pg._legend.remove()
 
 #%%
 
-index_train.get_level_values(level='Experiment').unique()
+index_train.get_level_values(level="Experiment").unique()
 
 #%%
 

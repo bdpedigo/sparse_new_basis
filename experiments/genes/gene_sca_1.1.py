@@ -221,7 +221,6 @@ stashfig("pairplot-pca-celegans-genes" + pca_params)
 #%%
 
 
-
 pg = sns.PairGrid(
     data=make_plot_df(X_sca[:, :n_show], neuron_types),
     hue="labels",

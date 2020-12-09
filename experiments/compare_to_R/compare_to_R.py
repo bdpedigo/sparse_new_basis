@@ -60,7 +60,7 @@ center = True
 scale = False
 max_iter = 1
 k_range = np.arange(2, d + 1, 4)
-n_replicates = 200
+n_replicates = 400
 rows = []
 for i in range(n_replicates):
     X = sample_data()
@@ -75,7 +75,15 @@ for i in range(n_replicates):
         Y_hat_sca = sca.components_.T
 
         pve = proportion_variance_explained(X, Y_hat_sca)
-        rows.append({"replicate": i, "k": k, "pve": pve, "method": "SCA"})
+        rows.append(
+            {
+                "replicate": i,
+                "k": k,
+                "pve": pve,
+                "method": "SCA",
+                "n_nonzero": np.count_nonzero(Y_hat_sca),
+            }
+        )
 
         Z_hat_r, Y_hat_r, outs = sca_R(
             X,
@@ -89,7 +97,7 @@ for i in range(n_replicates):
         )
         pve_r = np.asarray(outs[2])[-1]
         pve = proportion_variance_explained(X, Y_hat_r)
-        rows.append({"replicate": i, "k": k, "pve": pve, "method": "r-SCA"})
+        rows.append({"replicate": i, "k": k, "pve": pve, "method": "r-SCA", 'n_nonzero':np.count_nonzero(Y_hat_r)})
 
 results = pd.DataFrame(rows)
 
@@ -153,7 +161,8 @@ results = pd.DataFrame(rows)
 sca_results = results[results["method"] == "SCA"]
 r_sca_results = results[results["method"] == "r-SCA"]
 diff_results = sca_results.copy()
-diff_results["diff"] = sca_results["pve"].values - r_sca_results["pve"].values
+diff_results["diff_pve"] = sca_results["pve"].values - r_sca_results["pve"].values
+diff_results["diff_nnz"] = sca_results["n_nonzero"].values - r_sca_results["n_nonzero"].values
 diff_results["k_jitter"] = diff_results["k"] + np.random.uniform(
     -0.5, 0.5, size=len(diff_results)
 )
@@ -165,7 +174,7 @@ diff_results["k_jitter"] = diff_results["k"] + np.random.uniform(
 
 #%%
 fig, ax = plt.subplots(1, 1, figsize=(8, 4))
-sns.violinplot(x="k", y="diff", data=diff_results, ax=ax, width=0.9)
+sns.violinplot(x="k", y="diff", data=diff_results, ax=ax, width=0.9, cut=0, linewidth=1)
 sns.stripplot(
     x="k", y="diff", data=diff_results, ax=ax, alpha=0.7, lw=0, size=3, jitter=0.3
 )
@@ -173,3 +182,5 @@ ax.axhline(0, linestyle=":", color="black", zorder=-1)
 ax.set(ylabel="(Python - R) PVE", xlabel="# of PCs")
 
 stashfig("PVE-diff-violin")
+
+#%%

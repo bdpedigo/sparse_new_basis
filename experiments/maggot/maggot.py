@@ -1,37 +1,44 @@
 #%%
+import os
+import pickle
 import time
 from pathlib import Path
 
+import colorcet as cc
 import matplotlib.pyplot as plt
-import networkx as nx
 import numpy as np
 import pandas as pd
 import seaborn as sns
+from sklearn.decomposition import PCA
+from sklearn.feature_selection import VarianceThreshold
+from sklearn.model_selection import train_test_split
+from sklearn.preprocessing import StandardScaler
 
 from graspologic.plot import pairplot
+from sparse_decomposition import SparseComponentAnalysis
+from sparse_decomposition.utils import calculate_explained_variance_ratio
+from sparse_new_basis.data import load_scRNAseq
+from sparse_new_basis.plot import savefig, set_theme
+from sparse_new_basis.R import setup_R, sma_R_epca
+import networkx as nx
 from graspologic.utils import get_lcc, pass_to_ranks, to_laplace
-from sparse_decomposition import SparseMatrixApproximation
-from src.visualization import CLASS_COLOR_DICT
-import matplotlib as mpl
 
-sns.set_context("talk")
-mpl.rcParams["axes.spines.top"] = False
-mpl.rcParams["axes.spines.right"] = False
-
-fig_dir = Path("sparse_new_basis/experiments/maggot/figs")
+set_theme()
+epca = setup_R()
 
 
-def stashfig(name, dpi=300, fmt="png", pad_inches=0.5, facecolor="w", **kws):
-    plt.savefig(
-        fig_dir / name,
-        dpi=dpi,
-        fmt=fmt,
-        pad_inches=pad_inches,
-        facecolor=facecolor,
-        **kws,
-    )
+def sma_R(*args, **kwargs):
+    return sma_R_epca(epca, *args, **kwargs)
 
 
+fig_dir = Path("sparse_new_basis/results/maggot_1.0")
+
+
+def stashfig(name, *args, **kwargs):
+    savefig(fig_dir, name, *args, **kwargs)
+
+
+#%%
 data_dir = Path("sparse_new_basis/data/maggot")
 g = nx.read_weighted_edgelist(
     data_dir / "G.edgelist", create_using=nx.DiGraph, nodetype=int
@@ -49,7 +56,7 @@ if hemisphere == "left":
     inds = meta["inds"]
     adj = adj[np.ix_(inds, inds)]
 # TODO just try with one hemisphere
-#%%
+#%%s
 preprocessing = "ptr"
 if preprocessing == "ptr":
     adj_to_embed = pass_to_ranks(adj)
@@ -57,78 +64,23 @@ elif preprocessing == "sqrt":
     pass  # TODO
 else:
     adj_to_embed = adj
-currtime = time.time()
-sma = SparseMatrixApproximation(n_components=8, max_iter=0, gamma=None)
-sma.fit_transform(adj_to_embed)
-print(f"{time.time() - currtime} elapsed")
-
-left_latent = sma.left_latent_
-right_latent = sma.right_latent_
-
-#%%
-
-# print("Plotting...")
-# currtime = time.time()
-# columns = [f"Dimension {i+1}" for i in range(left_latent.shape[1])]
-# plot_df = pd.DataFrame(data=left_latent, columns=columns, index=meta.index)
-# plot_df = pd.concat((plot_df, meta), axis=1)
-# pg = sns.PairGrid(
-#     data=plot_df, hue="merge_class", palette=CLASS_COLOR_DICT, vars=columns[:4]
-# )
-# pg.map_upper(sns.scatterplot)
-# plt.savefig(fig_dir / "left_sma", pad_inches=0.25, dpi=200)
-# print(f"{time.time() - currtime} elapsed")
-
-# pg = pairplot(left_latent, diag_kind=None)
-# pg._legend.remove()
-#
-# pairplot(right_latent, labels=labels, palette=CLASS_COLOR_DICT, diag_kind=None)
-
-
-# %%
-def setup_R():
-    import os
-
-    # os.chdir("./")
-    # print(os.getcwd())
-    os.environ["R_HOME"] = "/Library/Frameworks/R.framework/Resources/"
-    os.environ[
-        "R_USER"
-    ] = "/Users/bpedigo/miniconda3/envs/sparse/lib/python3.7/site-packages/rpy2"
-    import rpy2.robjects as robjects
-    from rpy2.robjects.packages import importr
-    import rpy2.robjects.numpy2ri
-
-    rpy2.robjects.numpy2ri.activate()
-    epca = importr("epca")
-    return epca
-
-
-def run_sca_R(epca, *args):
-    out = epca.sca(*args)
-    loadings = out[0]
-    scores = out[1]
-    return np.asarray(scores), np.asarray(loadings)
-
-
-def run_sma_R(epca, *args, **kwargs):
-    out = epca.sma(*args, **kwargs)
-    Z = np.asarray(out[0])
-    B = np.asarray(out[1])
-    Y = np.asarray(out[2])
-    return Z, B, Y, out[3:]
-
-
-epca = setup_R()
 lap_to_embed = to_laplace(adj_to_embed, form="R-DAD")
+
+
 #%%
 currtime = time.time()
 n_components = 20
 gamma = 0.5 * np.sqrt(len(lap_to_embed) * n_components)
-Z, B, Y, info = run_sma_R(epca, lap_to_embed, k=n_components, gamma=gamma, epsilon=1e-8)
+Z, B, Y, info = sma_R(
+    lap_to_embed, k=n_components, gamma=gamma, epsilon=1e-5, return_all=True
+)
 print(f"{time.time() - currtime} elapsed to run SMA")
 
 #%%
+# from sparse_new_basis.plot import CLASS_COLOR_DICT
+from src.visualization import CLASS_COLOR_DICT
+from graspologic.plot import pairplot
+
 left_latent = Z
 print("Plotting pairplot...")
 currtime = time.time()
@@ -136,20 +88,42 @@ columns = [f"Dimension {i+1}" for i in range(left_latent.shape[1])]
 plot_df = pd.DataFrame(data=left_latent, columns=columns, index=meta.index)
 plot_df = pd.concat((plot_df, meta), axis=1)
 pg = sns.PairGrid(
-    data=plot_df, hue="merge_class", palette=CLASS_COLOR_DICT, vars=columns[:6]
+    data=plot_df,
+    hue="merge_class",
+    palette=CLASS_COLOR_DICT,
+    vars=columns[:6],
+    corner=True,
 )
-pg.map_upper(sns.scatterplot, s=10, linewidth=0, alpha=0.7)
-plt.savefig(fig_dir / "left_sma_R", pad_inches=0.25, dpi=200)
+pg.map_lower(sns.scatterplot, s=10, linewidth=0, alpha=0.7)
+pg.set(xticks=[], yticks=[])
+stashfig("left_sma_R")
+print(f"{time.time() - currtime} elapsed to plot pairplot")
+#%%
+right_latent = Y
+print("Plotting pairplot...")
+currtime = time.time()
+columns = [f"Dimension {i+1}" for i in range(left_latent.shape[1])]
+plot_df = pd.DataFrame(data=right_latent, columns=columns, index=meta.index)
+plot_df = pd.concat((plot_df, meta), axis=1)
+pg = sns.PairGrid(
+    data=plot_df,
+    hue="merge_class",
+    palette=CLASS_COLOR_DICT,
+    vars=columns[:6],
+    corner=True,
+)
+pg.map_lower(sns.scatterplot, s=10, linewidth=0, alpha=0.7)
+pg.set(xticks=[], yticks=[])
+stashfig("right_sma_R")
 print(f"{time.time() - currtime} elapsed to plot pairplot")
 
 #%%
-
 embedding = Z
 hue = "merge_class"
 palette = CLASS_COLOR_DICT
 p_nonzeros = []
 all_component_neurons = []
-for i, dim in enumerate(embedding.T[:20]):
+for i, dim in enumerate(embedding.T[:10]):
     dim = dim.copy()
     # this just makes the biggest entries in abs value positive
     if dim[np.argmax(np.abs(dim))] < 0:
@@ -159,7 +133,7 @@ for i, dim in enumerate(embedding.T[:20]):
     plot_df["dim"] = dim[sort_inds]
     plot_df["ind"] = range(len(plot_df))
     plot_df["labels"] = meta[hue].values[sort_inds]
-    fig, ax = plt.subplots(1, 1, figsize=(8, 4))
+    fig, ax = plt.subplots(1, 1, figsize=(6, 4))
     sns.scatterplot(
         x="ind",
         y="dim",
@@ -168,7 +142,7 @@ for i, dim in enumerate(embedding.T[:20]):
         ax=ax,
         palette=palette,
         legend=False,
-        s=5,
+        s=15,
         alpha=0.8,
         linewidth=0,
     )
@@ -196,13 +170,9 @@ for i, dim in enumerate(embedding.T[:20]):
     )
     component_neurons = meta.iloc[nonzero_inds].index
     all_component_neurons.append(component_neurons)
-
-fig, ax = plt.subplots(1, 1, figsize=(8, 4))
-sns.histplot(p_nonzeros, kde=True, ax=ax)
-sns.rugplot(p_nonzeros, ax=ax)
+    stashfig(f"Z_component_{i}")
 
 #%%
-
 from src.pymaid import start_instance
 from src.visualization import plot_3view
 
@@ -238,11 +208,12 @@ skeleton_color_dict = dict(
 )
 start_instance()
 
-
-for i, component_neurons in enumerate(all_component_neurons):
+start = 5
+for i, component_neurons in enumerate(all_component_neurons[start:10]):
+    i += start
     print(i)
     fig, axs = make_figure_axes()
     plot_3view(
         list(component_neurons), axs[0, :], palette=skeleton_color_dict, row_title="",
     )
-    stashfig(f"component_{i+1}_morphology")
+    stashfig(f"Z_component_{i+1}_morphology")
